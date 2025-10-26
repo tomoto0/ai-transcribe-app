@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI会議音声転写・翻訳アプリ</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <div class="icon">🎤</div>
+                <h1>AI会議音声転写・翻訳アプリ</h1>
+                <p>リアルタイム音声転写とインテリジェント要約</p>
+            </div>
+        </header>
+
+        <main class="main">
+            <!-- Recording Controls -->
+            <section class="recording-section">
+                <div class="controls">
+                    <button id="startBtn" class="btn btn-primary">
+                        <span class="btn-icon">▶</span>
+                        Start Recording
+                    </button>
+                    <button id="stopBtn" class="btn btn-secondary" disabled>
+                        <span class="btn-icon">⏹</span>
+                        Stop Recording
+                    </button>
+                    <button id="clearBtn" class="btn btn-outline">
+                        <span class="btn-icon">🗑</span>
+                        Clear
+                    </button>
+                </div>
+                
+                <div class="status-bar">
+                    <div class="status-indicator">
+                        <span class="status-dot" id="statusDot"></span>
+                        <span id="statusText">Ready to record</span>
+                    </div>
+                    <div class="timer" id="timer">00:00</div>
+                </div>
+            </section>
+
+            <!-- Live Transcription -->
+            <section class="transcription-section">
+                <div class="section-header">
+                    <h2>
+                        <span class="section-icon">📝</span>
+                        Live Transcription
+                    </h2>
+                    <div class="transcription-controls">
+                        <div class="summary-type-container" id="summaryTypeContainer">
+                            <select id="summaryTypeSelect" class="summary-type-select">
+                                <option value="short">Short Summary</option>
+                                <option value="medium" selected>Medium Summary</option>
+                                <option value="detailed">Detailed Summary</option>
+                            </select>
+                        </div>
+                        <div class="summary-language-container" id="summaryLanguageContainer">
+                            <select id="summaryLanguageSelect" class="summary-language-select">
+                                <option value="en">English</option>
+                                <option value="ja">Japanese (日本語)</option>
+                                <option value="es">Spanish (Español)</option>
+                                <option value="zh">Chinese (中文)</option>
+                                <option value="fr">French (Français)</option>
+                                <option value="it">Italian (Italiano)</option>
+                                <option value="ko">Korean (한국어)</option>
+                                <option value="ar">Arabic (العربية)</option>
+                                <option value="hi">Hindi (हिन्दी)</option>
+                                <option value="ru">Russian (Русский)</option>
+                                <option value="id">Indonesian (Bahasa Indonesia)</option>
+                            </select>
+                        </div>
+                        <button id="generateSummaryBtn" class="btn btn-primary" disabled>
+                            <span class="btn-icon">✨</span>
+                            Generate Summary
+                        </button>
+                        <button id="clearTranscriptionBtn" class="btn btn-outline">
+                            <span class="btn-icon">🗑</span>
+                            Clear
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="transcription-content">
+                    <div id="transcriptionText" class="transcription-text">
+                        <div class="transcription-placeholder">
+                            <span class="placeholder-icon">🎤</span>
+                            <p>Click "Start Recording" to begin transcription...</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Live Translation -->
+            <section class="translation-section">
+                <div class="section-header">
+                    <h2>
+                        <span class="section-icon">🌐</span>
+                        Live Translation
+                    </h2>
+                    <div class="translation-controls">
+                        <select id="translationLanguageSelect" class="language-select">
+                            <option value="en">English</option>
+
+                            <option value="es">Spanish (Español)</option>
+                            <option value="zh">Chinese (中文)</option>
+                            <option value="fr">French (Français)</option>
+                            <option value="it">Italian (Italiano)</option>
+                            <option value="ko">Korean (한국어)</option>
+                            <option value="ar">Arabic (العربية)</option>
+                            <option value="hi">Hindi (हिन्दी)</option>
+                            <option value="ru">Russian (Русский)</option>
+                            <option value="id">Indonesian (Bahasa Indonesia)</option>
+                        </select>
+                        <button id="ttsToggle" class="tts-toggle-btn" title="Toggle Text-to-Speech">
+                            <i class="fas fa-volume-up"></i> Speech OFF
+                        </button>
+                        <button id="clearTranslationBtn" class="clear-btn">
+                            <span class="btn-icon">🗑</span>
+                            Clear
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="translation-content">
+                    <div id="translationText" class="translation-text">
+                        <div class="translation-placeholder">
+                            <span class="placeholder-icon">🌐</span>
+                            <p>Translation will appear here when transcription starts...</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Summary Section -->
+            <section class="summary-section" id="summarySection" style="display: none;">
+                <div class="section-header">
+                    <h2>
+                        <span class="section-icon">📋</span>
+                        AI Summary
+                    </h2>
+                    <div class="summary-controls">
+                        <button id="exportTxtBtn" class="btn btn-outline">
+                            <span class="btn-icon">📄</span>
+                            Export TXT
+                        </button>
+                        <button id="exportJsonBtn" class="btn btn-outline">
+                            <span class="btn-icon">📊</span>
+                            Export JSON
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="summary-content">
+                    <div id="summaryText" class="summary-text"></div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <p>&copy; 2025 AI Presentation Notes. Designed and developed by Tomo Masuda.</p>
+        </footer>
+    </div>
+
+    <script src="/js/app_improved.js"></script>
+</body>
+</html>
+

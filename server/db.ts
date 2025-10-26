@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, users, audioSessions, transcriptions, translations, summaries, InsertAudioSession, InsertTranscription, InsertTranslation, InsertSummary } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,76 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+// Audio Session queries
+export async function createAudioSession(session: InsertAudioSession) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(audioSessions).values(session);
+  return result;
+}
+
+export async function getAudioSession(sessionId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  
+  const result = await db.select().from(audioSessions).where(eq(audioSessions.sessionId, sessionId)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function updateAudioSession(sessionId: string, updates: Partial<InsertAudioSession>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  return db.update(audioSessions).set(updates).where(eq(audioSessions.sessionId, sessionId));
+}
+
+// Transcription queries
+export async function createTranscription(transcription: InsertTranscription) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  return db.insert(transcriptions).values(transcription);
+}
+
+export async function getTranscriptionBySessionId(sessionId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  
+  const result = await db.select().from(transcriptions).where(eq(transcriptions.sessionId, sessionId)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+// Translation queries
+export async function createTranslation(translation: InsertTranslation) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  return db.insert(translations).values(translation);
+}
+
+export async function getTranslationsBySessionId(sessionId: string) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select().from(translations).where(eq(translations.sessionId, sessionId));
+}
+
+// Summary queries
+export async function createSummary(summary: InsertSummary) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  return db.insert(summaries).values(summary);
+}
+
+export async function getSummaryBySessionId(sessionId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  
+  const result = await db.select().from(summaries).where(eq(summaries.sessionId, sessionId)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
 // TODO: add feature queries here as your schema grows.
+
