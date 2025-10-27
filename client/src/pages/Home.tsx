@@ -1,13 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Loader2, Mic, MicOff, Copy, Download } from "lucide-react";
+import { Loader2, Mic, MicOff, Copy } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { APP_LOGO, APP_TITLE, getLoginUrl } from "@/const";
 
 export default function Home() {
-  const { user, loading: authLoading, isAuthenticated } = useAuth();
   const [isRecording, setIsRecording] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [transcription, setTranscription] = useState("");
@@ -19,7 +16,6 @@ export default function Home() {
   const [timer, setTimer] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const startSessionMutation = trpc.audio.startSession.useMutation();
@@ -69,13 +65,11 @@ export default function Home() {
 
       mediaRecorder.ondataavailable = async (event) => {
         if (event.data.size > 0 && session.sessionId) {
-          // In a real app, you would send this to the backend for transcription
-          // For now, we'll just collect it
           console.log("Audio chunk received:", event.data.size);
         }
       };
 
-      mediaRecorder.start(1000); // Collect data every 1 second
+      mediaRecorder.start(1000);
       setIsRecording(true);
     } catch (error) {
       console.error("Failed to start recording:", error);
@@ -93,7 +87,7 @@ export default function Home() {
       await stopSessionMutation.mutateAsync({ sessionId });
       setIsRecording(false);
 
-      // Simulate transcription (in real app, this would come from Deepgram)
+      // Simulate transcription
       const sampleTranscription = "This is a sample transcription of the recorded audio.";
       setTranscription(sampleTranscription);
 
@@ -145,37 +139,13 @@ export default function Home() {
     alert("Copied to clipboard!");
   };
 
-  if (authLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="animate-spin w-8 h-8" />
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold mb-4">AI Transcribe App</h1>
-          <p className="text-xl text-gray-600 mb-8">
-            Real-time audio transcription, translation, and summarization
-          </p>
-          <a href={getLoginUrl()}>
-            <Button size="lg">Sign in to get started</Button>
-          </a>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold mb-2">AI Transcribe App</h1>
-          <p className="text-gray-600">Welcome, {user?.name || "User"}!</p>
+          <p className="text-gray-600">Real-time audio transcription, translation, and summarization</p>
         </div>
 
         {/* Recording Section */}

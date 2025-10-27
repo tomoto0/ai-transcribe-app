@@ -1,7 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
+import { publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { createAudioSession, getAudioSession, updateAudioSession, createTranscription, getTranscriptionBySessionId, createTranslation, getTranslationsBySessionId, createSummary, getSummaryBySessionId } from "./db";
 import { invokeLLM } from "./_core/llm";
@@ -22,12 +22,13 @@ export const appRouter = router({
   }),
 
   audio: router({
-    // Start a new recording session
-    startSession: protectedProcedure.mutation(async ({ ctx }) => {
+    // Start a new recording session (no auth required)
+    startSession: publicProcedure.mutation(async () => {
       try {
         const sessionId = uuidv4();
+        // Use a default userId of 0 for anonymous users
         await createAudioSession({
-          userId: ctx.user.id,
+          userId: 0,
           sessionId,
           status: "recording",
         });
@@ -41,17 +42,14 @@ export const appRouter = router({
       }
     }),
 
-    // Stop recording session
-    stopSession: protectedProcedure
+    // Stop recording session (no auth required)
+    stopSession: publicProcedure
       .input(z.object({ sessionId: z.string() }))
-      .mutation(async ({ ctx, input }) => {
+      .mutation(async ({ input }) => {
         try {
           const session = await getAudioSession(input.sessionId);
           if (!session) {
             throw new Error("Session not found");
-          }
-          if (session.userId !== ctx.user.id) {
-            throw new Error("Unauthorized");
           }
 
           await updateAudioSession(input.sessionId, {
@@ -65,26 +63,23 @@ export const appRouter = router({
         }
       }),
 
-    // Record transcription result
-    recordTranscription: protectedProcedure
+    // Record transcription result (no auth required)
+    recordTranscription: publicProcedure
       .input(z.object({
         sessionId: z.string(),
         text: z.string(),
         language: z.string().default("ja"),
       }))
-      .mutation(async ({ ctx, input }) => {
+      .mutation(async ({ input }) => {
         try {
           const session = await getAudioSession(input.sessionId);
           if (!session) {
             throw new Error("Session not found");
           }
-          if (session.userId !== ctx.user.id) {
-            throw new Error("Unauthorized");
-          }
 
           await createTranscription({
             sessionId: input.sessionId,
-            userId: ctx.user.id,
+            userId: 0,
             originalText: input.text,
             language: input.language,
           });
@@ -96,17 +91,14 @@ export const appRouter = router({
         }
       }),
 
-    // Get transcription for a session
-    getTranscription: protectedProcedure
+    // Get transcription for a session (no auth required)
+    getTranscription: publicProcedure
       .input(z.object({ sessionId: z.string() }))
-      .query(async ({ ctx, input }) => {
+      .query(async ({ input }) => {
         try {
           const session = await getAudioSession(input.sessionId);
           if (!session) {
             throw new Error("Session not found");
-          }
-          if (session.userId !== ctx.user.id) {
-            throw new Error("Unauthorized");
           }
 
           const transcription = await getTranscriptionBySessionId(input.sessionId);
@@ -119,22 +111,19 @@ export const appRouter = router({
   }),
 
   translation: router({
-    // Translate text using Manus LLM
-    translate: protectedProcedure
+    // Translate text using Manus LLM (no auth required)
+    translate: publicProcedure
       .input(z.object({
         sessionId: z.string(),
         text: z.string(),
         targetLanguage: z.string().default("ja"),
         previousTranslations: z.array(z.string()).optional(),
       }))
-      .mutation(async ({ ctx, input }) => {
+      .mutation(async ({ input }) => {
         try {
           const session = await getAudioSession(input.sessionId);
           if (!session) {
             throw new Error("Session not found");
-          }
-          if (session.userId !== ctx.user.id) {
-            throw new Error("Unauthorized");
           }
 
           // Language mapping for better prompts
@@ -192,7 +181,7 @@ Provide only the translation without any explanations or additional text.`;
             await createTranslation({
               transcriptionId: transcription.id,
               sessionId: input.sessionId,
-              userId: ctx.user.id,
+              userId: 0,
               sourceText: input.text,
               targetText: translatedText,
               sourceLanguage: "en",
@@ -211,17 +200,14 @@ Provide only the translation without any explanations or additional text.`;
         }
       }),
 
-    // Get translation history for a session
-    getHistory: protectedProcedure
+    // Get translation history for a session (no auth required)
+    getHistory: publicProcedure
       .input(z.object({ sessionId: z.string() }))
-      .query(async ({ ctx, input }) => {
+      .query(async ({ input }) => {
         try {
           const session = await getAudioSession(input.sessionId);
           if (!session) {
             throw new Error("Session not found");
-          }
-          if (session.userId !== ctx.user.id) {
-            throw new Error("Unauthorized");
           }
 
           return await getTranslationsBySessionId(input.sessionId);
@@ -233,21 +219,18 @@ Provide only the translation without any explanations or additional text.`;
   }),
 
   summary: router({
-    // Generate summary using Manus LLM
-    generate: protectedProcedure
+    // Generate summary using Manus LLM (no auth required)
+    generate: publicProcedure
       .input(z.object({
         sessionId: z.string(),
         summaryType: z.enum(["short", "medium", "detailed"]).default("medium"),
         summaryLanguage: z.string().default("en"),
       }))
-      .mutation(async ({ ctx, input }) => {
+      .mutation(async ({ input }) => {
         try {
           const session = await getAudioSession(input.sessionId);
           if (!session) {
             throw new Error("Session not found");
-          }
-          if (session.userId !== ctx.user.id) {
-            throw new Error("Unauthorized");
           }
 
           const transcription = await getTranscriptionBySessionId(input.sessionId);
@@ -348,7 +331,7 @@ Transcript: ${transcript}`;
           // Store summary in database
           await createSummary({
             sessionId: input.sessionId,
-            userId: ctx.user.id,
+            userId: 0,
             originalText: transcript,
             summaryText,
             summaryType: input.summaryType,
@@ -367,17 +350,14 @@ Transcript: ${transcript}`;
         }
       }),
 
-    // Get summary for a session
-    get: protectedProcedure
+    // Get summary for a session (no auth required)
+    get: publicProcedure
       .input(z.object({ sessionId: z.string() }))
-      .query(async ({ ctx, input }) => {
+      .query(async ({ input }) => {
         try {
           const session = await getAudioSession(input.sessionId);
           if (!session) {
             throw new Error("Session not found");
-          }
-          if (session.userId !== ctx.user.id) {
-            throw new Error("Unauthorized");
           }
 
           return await getSummaryBySessionId(input.sessionId);
