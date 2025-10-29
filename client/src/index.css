@@ -114,6 +114,12 @@
 }
 
 @layer base {
+  html.dark {
+    color-scheme: dark;
+  }
+  html {
+    color-scheme: dark;
+  }
   * {
     @apply border-border outline-ring/50;
   }

@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Loader2, Mic, MicOff, Copy } from "lucide-react";
+import { Loader2, Mic, MicOff, Copy, CheckCircle, AlertCircle, Volume2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
+
+type RecordingState = "idle" | "recording" | "processing" | "completed";
 
 export default function Home() {
-  const [isRecording, setIsRecording] = useState(false);
+  const [recordingState, setRecordingState] = useState<RecordingState>("idle");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [transcription, setTranscription] = useState("");
   const [translation, setTranslation] = useState("");
@@ -14,9 +17,15 @@ export default function Home() {
   const [summaryType, setSummaryType] = useState<"short" | "medium" | "detailed">("medium");
   const [summaryLanguage, setSummaryLanguage] = useState("en");
   const [timer, setTimer] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [audioLevel, setAudioLevel] = useState(0);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const startSessionMutation = trpc.audio.startSession.useMutation();
   const stopSessionMutation = trpc.audio.stopSession.useMutation();
@@ -26,7 +35,7 @@ export default function Home() {
 
   // Timer effect
   useEffect(() => {
-    if (isRecording) {
+    if (recordingState === "recording") {
       timerIntervalRef.current = setInterval(() => {
         setTimer((prev) => prev + 1);
       }, 1000);
@@ -34,14 +43,27 @@ export default function Home() {
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
       }
-      setTimer(0);
+      if (recordingState === "idle") {
+        setTimer(0);
+      }
     }
     return () => {
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
       }
     };
-  }, [isRecording]);
+  }, [recordingState]);
+
+  // Audio level monitoring
+  const updateAudioLevel = () => {
+    if (analyserRef.current) {
+      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+      analyserRef.current.getByteFrequencyData(dataArray);
+      const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+      setAudioLevel(Math.min(100, (average / 255) * 100));
+      animationFrameRef.current = requestAnimationFrame(updateAudioLevel);
+    }
+  };
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -51,44 +73,118 @@ export default function Home() {
 
   const startRecording = async () => {
     try {
+      setError(null);
+      setRecordingState("recording");
+
       // Start session
       const session = await startSessionMutation.mutateAsync();
       setSessionId(session.sessionId);
 
-      // Get microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Get microphone access with better error handling
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: false,
+          },
+        });
+      } catch (err) {
+        const error = err as Error;
+        let errorMessage = "マイクへのアクセスが拒否されました。";
+        
+        if (error.name === "NotAllowedError") {
+          errorMessage = "マイクへのアクセスが拒否されました。ブラウザの設定を確認してください。";
+        } else if (error.name === "NotFoundError") {
+          errorMessage = "マイクが見つかりません。デバイスに接続されているか確認してください。";
+        } else if (error.name === "NotReadableError") {
+          errorMessage = "マイクが他のアプリケーションで使用されています。";
+        }
+        
+        setError(errorMessage);
+        setRecordingState("idle");
+        toast.error(errorMessage);
+        return;
+      }
+
+      streamRef.current = stream;
+
+      // Setup audio context for level monitoring
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       audioContextRef.current = audioContext;
 
-      const mediaRecorder = new MediaRecorder(stream);
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      // Start monitoring audio level
+      updateAudioLevel();
+
+      // Setup media recorder
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: "audio/webm;codecs=opus",
+      });
       mediaRecorderRef.current = mediaRecorder;
 
-      mediaRecorder.ondataavailable = async (event) => {
-        if (event.data.size > 0 && session.sessionId) {
-          console.log("Audio chunk received:", event.data.size);
+      const audioChunks: Blob[] = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunks.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        if (audioChunks.length > 0) {
+          const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+          console.log("Recording completed, audio size:", audioBlob.size);
         }
       };
 
       mediaRecorder.start(1000);
-      setIsRecording(true);
-    } catch (error) {
-      console.error("Failed to start recording:", error);
-      alert("Failed to access microphone");
+      toast.success("録音を開始しました");
+    } catch (err) {
+      const error = err as Error;
+      setError(`エラーが発生しました: ${error.message}`);
+      setRecordingState("idle");
+      toast.error(`エラー: ${error.message}`);
     }
   };
 
   const stopRecording = async () => {
     if (!mediaRecorderRef.current || !sessionId) return;
 
-    mediaRecorderRef.current.stop();
-    mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
-
     try {
-      await stopSessionMutation.mutateAsync({ sessionId });
-      setIsRecording(false);
+      setRecordingState("processing");
 
-      // Simulate transcription
-      const sampleTranscription = "This is a sample transcription of the recorded audio.";
+      // Stop recording
+      mediaRecorderRef.current.stop();
+
+      // Stop audio level monitoring
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      setAudioLevel(0);
+
+      // Close audio context
+      if (audioContextRef.current) {
+        await audioContextRef.current.close();
+      }
+
+      // Stop all tracks
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+
+      // Stop session
+      await stopSessionMutation.mutateAsync({ sessionId });
+
+      // Simulate transcription (in real app, this would come from Deepgram)
+      const sampleTranscription =
+        "This is a sample transcription of the recorded audio. You can translate this text to different languages and generate summaries.";
       setTranscription(sampleTranscription);
 
       // Record transcription
@@ -97,105 +193,186 @@ export default function Home() {
         text: sampleTranscription,
         language: "en",
       });
-    } catch (error) {
-      console.error("Failed to stop recording:", error);
+
+      setRecordingState("completed");
+      toast.success("録音が完了しました");
+    } catch (err) {
+      const error = err as Error;
+      setError(`停止エラー: ${error.message}`);
+      setRecordingState("idle");
+      toast.error(`エラー: ${error.message}`);
     }
   };
 
   const handleTranslate = async () => {
-    if (!transcription || !sessionId) return;
+    if (!transcription || !sessionId) {
+      setError("転写テキストがありません");
+      return;
+    }
 
     try {
+      setError(null);
       const result = await translateMutation.mutateAsync({
         sessionId,
         text: transcription,
         targetLanguage,
       });
       setTranslation(result.translation);
-    } catch (error) {
-      console.error("Translation failed:", error);
-      alert("Failed to translate text");
+      toast.success("翻訳が完了しました");
+    } catch (err) {
+      const error = err as Error;
+      const errorMsg = `翻訳エラー: ${error.message}`;
+      setError(errorMsg);
+      toast.error(errorMsg);
     }
   };
 
   const handleGenerateSummary = async () => {
-    if (!transcription || !sessionId) return;
+    if (!transcription || !sessionId) {
+      setError("転写テキストがありません");
+      return;
+    }
 
     try {
+      setError(null);
       const result = await generateSummaryMutation.mutateAsync({
         sessionId,
         summaryType,
         summaryLanguage,
       });
       setSummary(result.summary);
-    } catch (error) {
-      console.error("Summary generation failed:", error);
-      alert("Failed to generate summary");
+      toast.success("サマリーが生成されました");
+    } catch (err) {
+      const error = err as Error;
+      const errorMsg = `サマリー生成エラー: ${error.message}`;
+      setError(errorMsg);
+      toast.error(errorMsg);
     }
   };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    alert("Copied to clipboard!");
+    toast.success("クリップボードにコピーしました");
+  };
+
+  const handleClear = () => {
+    setTranscription("");
+    setTranslation("");
+    setSummary("");
+    setSessionId(null);
+    setError(null);
+    setRecordingState("idle");
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4 md:p-6">
+      <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold mb-2">AI Transcribe App</h1>
-          <p className="text-gray-600">Real-time audio transcription, translation, and summarization</p>
+          <div className="flex items-center justify-center gap-3 mb-4">
+            <Volume2 className="w-8 h-8 text-blue-400" />
+            <h1 className="text-3xl md:text-4xl font-bold text-white">AI Transcribe</h1>
+          </div>
+          <p className="text-gray-400 text-sm md:text-base">
+            音声を転写、翻訳、要約 - すべてAIで自動処理
+          </p>
         </div>
 
+        {/* Error Alert */}
+        {error && (
+          <Card className="mb-6 p-4 bg-red-950 border-red-800">
+            <div className="flex gap-3 items-start">
+              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-red-200 font-semibold">エラーが発生しました</p>
+                <p className="text-red-300 text-sm mt-1">{error}</p>
+              </div>
+            </div>
+          </Card>
+        )}
+
         {/* Recording Section */}
-        <Card className="mb-6 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-bold">Recording</h2>
-            <div className="text-3xl font-mono">{formatTime(timer)}</div>
+        <Card className="mb-6 p-6 bg-slate-800 border-slate-700">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-white">録音</h2>
+            <div className="text-4xl font-mono text-blue-400 font-bold">{formatTime(timer)}</div>
           </div>
 
-          <div className="flex gap-4 mb-4">
+          {/* Audio Level Indicator */}
+          {recordingState === "recording" && (
+            <div className="mb-6">
+              <div className="flex items-center gap-3 mb-2">
+                <span className="text-sm text-gray-400">音量レベル</span>
+                <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-100"
+                    style={{ width: `${audioLevel}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Control Buttons */}
+          <div className="flex flex-col sm:flex-row gap-3 mb-4">
             <Button
               onClick={startRecording}
-              disabled={isRecording}
-              className="flex items-center gap-2"
+              disabled={recordingState !== "idle"}
+              className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3"
             >
-              <Mic className="w-4 h-4" />
-              Start Recording
+              <Mic className="w-5 h-5" />
+              {recordingState === "recording" ? "録音中..." : "開始"}
             </Button>
             <Button
               onClick={stopRecording}
-              disabled={!isRecording}
+              disabled={recordingState !== "recording"}
               variant="destructive"
-              className="flex items-center gap-2"
+              className="flex-1 flex items-center justify-center gap-2 font-semibold py-3"
             >
-              <MicOff className="w-4 h-4" />
-              Stop Recording
+              <MicOff className="w-5 h-5" />
+              停止
             </Button>
             <Button
-              onClick={() => {
-                setTranscription("");
-                setTranslation("");
-                setSummary("");
-                setSessionId(null);
-              }}
+              onClick={handleClear}
+              disabled={recordingState === "recording"}
               variant="outline"
+              className="flex-1 font-semibold py-3"
             >
-              Clear
+              クリア
             </Button>
           </div>
 
-          <div className="text-sm text-gray-600">
-            {isRecording ? "🔴 Recording..." : "Ready to record"}
+          {/* Status Indicator */}
+          <div className="flex items-center gap-2">
+            {recordingState === "recording" && (
+              <>
+                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                <span className="text-sm text-gray-400">録音中...</span>
+              </>
+            )}
+            {recordingState === "processing" && (
+              <>
+                <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                <span className="text-sm text-gray-400">処理中...</span>
+              </>
+            )}
+            {recordingState === "completed" && (
+              <>
+                <CheckCircle className="w-4 h-4 text-green-400" />
+                <span className="text-sm text-gray-400">完了</span>
+              </>
+            )}
+            {recordingState === "idle" && (
+              <span className="text-sm text-gray-400">準備完了</span>
+            )}
           </div>
         </Card>
 
         {/* Transcription Section */}
         {transcription && (
-          <Card className="mb-6 p-6">
+          <Card className="mb-6 p-6 bg-slate-800 border-slate-700">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold">Transcription</h2>
+              <h2 className="text-2xl font-bold text-white">転写結果</h2>
               <Button
                 onClick={() => copyToClipboard(transcription)}
                 variant="outline"
@@ -203,10 +380,10 @@ export default function Home() {
                 className="flex items-center gap-2"
               >
                 <Copy className="w-4 h-4" />
-                Copy
+                コピー
               </Button>
             </div>
-            <div className="bg-white p-4 rounded-lg border border-gray-200 min-h-24">
+            <div className="bg-slate-900 p-4 rounded-lg border border-slate-700 min-h-24 text-gray-200">
               {transcription}
             </div>
           </Card>
@@ -214,37 +391,46 @@ export default function Home() {
 
         {/* Translation Section */}
         {transcription && (
-          <Card className="mb-6 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold">Translation</h2>
-              <div className="flex gap-2">
+          <Card className="mb-6 p-6 bg-slate-800 border-slate-700">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+              <h2 className="text-2xl font-bold text-white">翻訳</h2>
+              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                 <select
                   value={targetLanguage}
                   onChange={(e) => setTargetLanguage(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg"
+                  className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-gray-200 text-sm"
                 >
-                  <option value="ja">Japanese</option>
-                  <option value="es">Spanish</option>
-                  <option value="zh">Chinese</option>
-                  <option value="fr">French</option>
-                  <option value="it">Italian</option>
-                  <option value="ko">Korean</option>
+                  <option value="ja">日本語</option>
+                  <option value="es">スペイン語</option>
+                  <option value="zh">中国語</option>
+                  <option value="fr">フランス語</option>
+                  <option value="it">イタリア語</option>
+                  <option value="ko">韓国語</option>
+                  <option value="ar">アラビア語</option>
+                  <option value="ru">ロシア語</option>
                 </select>
                 <Button
                   onClick={handleTranslate}
                   disabled={translateMutation.isPending}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
                 >
                   {translateMutation.isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    "Translate"
+                    "翻訳"
                   )}
                 </Button>
               </div>
             </div>
             {translation && (
-              <div className="bg-white p-4 rounded-lg border border-gray-200 min-h-24">
+              <div className="bg-slate-900 p-4 rounded-lg border border-slate-700 min-h-24 text-gray-200">
                 {translation}
+              </div>
+            )}
+            {translateMutation.isPending && (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-blue-400 mr-2" />
+                <span className="text-gray-400">翻訳処理中...</span>
               </div>
             )}
           </Card>
@@ -252,45 +438,64 @@ export default function Home() {
 
         {/* Summary Section */}
         {transcription && (
-          <Card className="mb-6 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold">Summary</h2>
-              <div className="flex gap-2">
+          <Card className="mb-6 p-6 bg-slate-800 border-slate-700">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+              <h2 className="text-2xl font-bold text-white">要約</h2>
+              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                 <select
                   value={summaryType}
                   onChange={(e) => setSummaryType(e.target.value as any)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg"
+                  className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-gray-200 text-sm"
                 >
-                  <option value="short">Short</option>
-                  <option value="medium">Medium</option>
-                  <option value="detailed">Detailed</option>
+                  <option value="short">短い</option>
+                  <option value="medium">中程度</option>
+                  <option value="detailed">詳細</option>
                 </select>
                 <select
                   value={summaryLanguage}
                   onChange={(e) => setSummaryLanguage(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg"
+                  className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-gray-200 text-sm"
                 >
                   <option value="en">English</option>
-                  <option value="ja">Japanese</option>
-                  <option value="es">Spanish</option>
+                  <option value="ja">日本語</option>
+                  <option value="es">スペイン語</option>
                 </select>
                 <Button
                   onClick={handleGenerateSummary}
                   disabled={generateSummaryMutation.isPending}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
                 >
                   {generateSummaryMutation.isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    "Generate"
+                    "生成"
                   )}
                 </Button>
               </div>
             </div>
             {summary && (
-              <div className="bg-white p-4 rounded-lg border border-gray-200 min-h-24">
+              <div className="bg-slate-900 p-4 rounded-lg border border-slate-700 min-h-24 text-gray-200 whitespace-pre-wrap">
                 {summary}
               </div>
             )}
+            {generateSummaryMutation.isPending && (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-blue-400 mr-2" />
+                <span className="text-gray-400">要約生成中...</span>
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* Info Section */}
+        {!transcription && recordingState === "idle" && (
+          <Card className="p-6 bg-slate-800 border-slate-700 text-center">
+            <p className="text-gray-400 mb-4">
+              「開始」ボタンをクリックして、音声の録音を開始してください。
+            </p>
+            <p className="text-sm text-gray-500">
+              対応言語: 日本語、英語、スペイン語、中国語、フランス語、イタリア語、韓国語、アラビア語、ロシア語
+            </p>
           </Card>
         )}
       </div>
