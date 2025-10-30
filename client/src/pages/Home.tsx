@@ -123,10 +123,56 @@ export default function Home() {
       // Start monitoring audio level
       updateAudioLevel();
 
-      // Setup media recorder
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: "audio/webm;codecs=opus",
-      });
+      // Setup media recorder with proper mime type handling
+      let mediaRecorder: MediaRecorder;
+      
+      // Try different mime types in order of preference
+      const mimeTypes = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/mp4",
+        "audio/mpeg",
+        "audio/wav",
+        "audio/ogg",
+      ];
+
+      let selectedMimeType = "";
+      for (const mimeType of mimeTypes) {
+        if (MediaRecorder.isTypeSupported(mimeType)) {
+          selectedMimeType = mimeType;
+          break;
+        }
+      }
+
+      // Create MediaRecorder with or without mime type
+      try {
+        if (selectedMimeType) {
+          mediaRecorder = new MediaRecorder(stream, {
+            mimeType: selectedMimeType,
+          });
+          console.log("MediaRecorder created with mime type:", selectedMimeType);
+        } else {
+          // Fallback: create without specifying mime type
+          mediaRecorder = new MediaRecorder(stream);
+          console.log("MediaRecorder created with default mime type");
+        }
+      } catch (err) {
+        const error = err as Error;
+        const errorMsg = `MediaRecorder initialization failed: ${error.message}`;
+        setError(errorMsg);
+        setRecordingState("idle");
+        toast.error(errorMsg);
+        
+        // Clean up
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((track) => track.stop());
+        }
+        if (audioContextRef.current) {
+          await audioContextRef.current.close();
+        }
+        return;
+      }
+
       mediaRecorderRef.current = mediaRecorder;
 
       const audioChunks: Blob[] = [];
@@ -139,9 +185,17 @@ export default function Home() {
 
       mediaRecorder.onstop = async () => {
         if (audioChunks.length > 0) {
-          const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
-          console.log("Recording completed, audio size:", audioBlob.size);
+          const mimeType = selectedMimeType || "audio/webm";
+          const audioBlob = new Blob(audioChunks, { type: mimeType });
+          console.log("Recording completed, audio size:", audioBlob.size, "mime type:", mimeType);
         }
+      };
+
+      mediaRecorder.onerror = (event) => {
+        const errorMsg = `Recording error: ${event.error}`;
+        console.error(errorMsg);
+        setError(errorMsg);
+        toast.error(errorMsg);
       };
 
       mediaRecorder.start(1000);
