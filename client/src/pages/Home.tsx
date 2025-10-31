@@ -1,4 +1,19 @@
 import { useEffect, useRef, useState } from "react";
+
+// Helper function to get file extension from MIME type
+function getFileExtension(mimeType: string): string {
+  const mimeToExt: Record<string, string> = {
+    "audio/webm": "webm",
+    "audio/mp3": "mp3",
+    "audio/mpeg": "mp3",
+    "audio/wav": "wav",
+    "audio/wave": "wav",
+    "audio/ogg": "ogg",
+    "audio/m4a": "m4a",
+    "audio/mp4": "m4a",
+  };
+  return mimeToExt[mimeType] || "audio";
+}
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Loader2, Mic, MicOff, Copy, CheckCircle, AlertCircle, Volume2 } from "lucide-react";
@@ -30,6 +45,7 @@ export default function Home() {
   const startSessionMutation = trpc.audio.startSession.useMutation();
   const stopSessionMutation = trpc.audio.stopSession.useMutation();
   const recordTranscriptionMutation = trpc.audio.recordTranscription.useMutation();
+  const transcribeAudioMutation = trpc.audio.transcribeAudio.useMutation();
   const translateMutation = trpc.translation.translate.useMutation();
   const generateSummaryMutation = trpc.summary.generate.useMutation();
 
@@ -184,11 +200,8 @@ export default function Home() {
       };
 
       mediaRecorder.onstop = async () => {
-        if (audioChunks.length > 0) {
-          const mimeType = selectedMimeType || "audio/webm";
-          const audioBlob = new Blob(audioChunks, { type: mimeType });
-          console.log("Recording completed, audio size:", audioBlob.size, "mime type:", mimeType);
-        }
+        // Recording stopped, audio chunks are ready
+        console.log("Recording stopped, audio chunks:", audioChunks.length);
       };
 
       mediaRecorder.onerror = (event) => {
@@ -236,17 +249,24 @@ export default function Home() {
       // Stop session
       await stopSessionMutation.mutateAsync({ sessionId });
 
-      // Simulate transcription (in real app, this would come from Deepgram)
-      const sampleTranscription =
-        "This is a sample transcription of the recorded audio. You can translate this text to different languages and generate summaries.";
+      // Show processing state
+      setTranscription("\u97f3\u58f0\u3092\u51e6\u7406\u4e2d...");
+      
+      // For demo purposes, set a sample transcription
+      // In production, this would call the actual Whisper API
+      const sampleTranscription = "This is a sample transcription of the recorded audio. You can translate this text to different languages and generate summaries using AI.";
       setTranscription(sampleTranscription);
-
+      
       // Record transcription
-      await recordTranscriptionMutation.mutateAsync({
-        sessionId,
-        text: sampleTranscription,
-        language: "en",
-      });
+      try {
+        await recordTranscriptionMutation.mutateAsync({
+          sessionId,
+          text: sampleTranscription,
+          language: "en",
+        });
+      } catch (err) {
+        console.error("Failed to record transcription:", err);
+      }
 
       setRecordingState("completed");
       toast.success("録音が完了しました");

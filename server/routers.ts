@@ -5,6 +5,8 @@ import { publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { createAudioSession, getAudioSession, updateAudioSession, createTranscription, getTranscriptionBySessionId, createTranslation, getTranslationsBySessionId, createSummary, getSummaryBySessionId } from "./db";
 import { invokeLLM } from "./_core/llm";
+import { transcribeAudio } from "./_core/voiceTranscription";
+import { storagePut } from "./storage";
 import { v4 as uuidv4 } from "uuid";
 
 export const appRouter = router({
@@ -88,6 +90,49 @@ export const appRouter = router({
         } catch (error) {
           console.error("[AUDIO] Failed to record transcription:", error);
           throw error;
+        }
+      }),
+
+    // Transcribe audio using Whisper API (no auth required)
+    transcribeAudio: publicProcedure
+      .input(z.object({
+        audioUrl: z.string(),
+        sessionId: z.string(),
+        language: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        try {
+          const session = await getAudioSession(input.sessionId);
+          if (!session) {
+            throw new Error("Session not found");
+          }
+
+          const result = await transcribeAudio({
+            audioUrl: input.audioUrl,
+            language: input.language || "en",
+            prompt: "Transcribe the user's voice to text",
+          });
+
+          if ("error" in result) {
+            throw new Error(result.error);
+          }
+
+          await createTranscription({
+            sessionId: input.sessionId,
+            userId: 0,
+            originalText: result.text,
+            language: result.language || input.language || "en",
+          });
+
+          return {
+            success: true,
+            text: result.text,
+            language: result.language,
+            segments: result.segments,
+          };
+        } catch (error) {
+          console.error("[AUDIO] Failed to transcribe:", error);
+          throw new Error(`Transcription failed: ${error instanceof Error ? error.message : "Unknown error"}`);
         }
       }),
 
