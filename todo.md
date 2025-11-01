@@ -42,3 +42,11 @@
 - [x] 転写結果取得実装
 - [ ] 最終チェックポイント作成
 
+
+
+## Bug Fixes & Improvements
+- [x] 録音停止バグ修正 (stop()が機能していない)
+- [x] ManusAI機能統合 (Whisper, LLM, Image Generation)
+- [x] エラーハンドリング改善 (401, NET::ERR_CONNECTION_CLOSED)
+- [ ] 最終デプロイ
+

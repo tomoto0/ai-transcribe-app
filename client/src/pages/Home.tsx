@@ -226,9 +226,14 @@ export default function Home() {
 
     try {
       setRecordingState("processing");
+      console.log("Stopping recording...");
 
-      // Stop recording
-      mediaRecorderRef.current.stop();
+      // Stop recording - wait for the onstop event
+      const recorder = mediaRecorderRef.current;
+      if (recorder.state !== "inactive") {
+        recorder.stop();
+        console.log("MediaRecorder stopped");
+      }
 
       // Stop audio level monitoring
       if (animationFrameRef.current) {
@@ -237,17 +242,29 @@ export default function Home() {
       setAudioLevel(0);
 
       // Close audio context
-      if (audioContextRef.current) {
+      if (audioContextRef.current && audioContextRef.current.state !== "closed") {
         await audioContextRef.current.close();
+        console.log("AudioContext closed");
       }
 
       // Stop all tracks
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current.getTracks().forEach((track) => {
+          track.stop();
+          console.log("Track stopped");
+        });
       }
 
+      // Wait a moment for the onstop event to fire
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       // Stop session
-      await stopSessionMutation.mutateAsync({ sessionId });
+      try {
+        await stopSessionMutation.mutateAsync({ sessionId });
+        console.log("Session stopped");
+      } catch (err) {
+        console.error("Failed to stop session:", err);
+      }
 
       // Show processing state
       setTranscription("\u97f3\u58f0\u3092\u51e6\u7406\u4e2d...");
@@ -264,6 +281,7 @@ export default function Home() {
           text: sampleTranscription,
           language: "en",
         });
+        console.log("Transcription recorded");
       } catch (err) {
         console.error("Failed to record transcription:", err);
       }
@@ -272,6 +290,7 @@ export default function Home() {
       toast.success("録音が完了しました");
     } catch (err) {
       const error = err as Error;
+      console.error("Stop recording error:", error);
       setError(`停止エラー: ${error.message}`);
       setRecordingState("idle");
       toast.error(`エラー: ${error.message}`);
