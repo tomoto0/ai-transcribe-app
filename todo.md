@@ -50,3 +50,12 @@
 - [x] エラーハンドリング改善 (401, NET::ERR_CONNECTION_CLOSED)
 - [ ] 最終デプロイ
 
+
+
+## Production Implementation Complete
+- [x] 実際の音声ファイルをManusのWhisper APIで転写
+- [x] uploadAudioエンドポイント実装
+- [x] フロントエンドから音声ファイルアップロード
+- [x] 転写結果の表示
+- [x] 翻訳・サマリー生成の統合
+

@@ -9,6 +9,20 @@ import { transcribeAudio } from "./_core/voiceTranscription";
 import { storagePut } from "./storage";
 import { v4 as uuidv4 } from "uuid";
 
+function getFileExtensionFromMimeType(mimeType: string): string {
+  const mimeToExt: Record<string, string> = {
+    "audio/webm": "webm",
+    "audio/mp3": "mp3",
+    "audio/mpeg": "mp3",
+    "audio/wav": "wav",
+    "audio/wave": "wav",
+    "audio/ogg": "ogg",
+    "audio/m4a": "m4a",
+    "audio/mp4": "m4a",
+  };
+  return mimeToExt[mimeType] || "audio";
+}
+
 export const appRouter = router({
   system: systemRouter,
 
@@ -133,6 +147,44 @@ export const appRouter = router({
         } catch (error) {
           console.error("[AUDIO] Failed to transcribe:", error);
           throw new Error(`Transcription failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+        }
+      }),
+
+    // Upload audio file to storage (no auth required)
+    uploadAudio: publicProcedure
+      .input(z.object({
+        sessionId: z.string(),
+        audioData: z.array(z.number()).optional(),
+        mimeType: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        try {
+          const session = await getAudioSession(input.sessionId);
+          if (!session) {
+            throw new Error("Session not found");
+          }
+
+          if (!input.audioData || input.audioData.length === 0) {
+            throw new Error("No audio data provided");
+          }
+
+          const audioBuffer = Buffer.from(input.audioData);
+          const mimeType = input.mimeType || "audio/webm";
+
+          const result = await storagePut(
+            `audio/${input.sessionId}/recording.${getFileExtensionFromMimeType(mimeType)}`,
+            audioBuffer,
+            mimeType
+          );
+
+          return {
+            success: true,
+            url: result.url,
+            key: result.key,
+          };
+        } catch (error) {
+          console.error("[AUDIO] Failed to upload audio:", error);
+          throw new Error(`Audio upload failed: ${error instanceof Error ? error.message : "Unknown error"}`);
         }
       }),
 
