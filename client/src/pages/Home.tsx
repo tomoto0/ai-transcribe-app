@@ -157,52 +157,53 @@ export default function Home() {
             const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
             console.log("Audio blob created, size:", audioBlob.size);
 
-            // Upload audio to storage
-            const formData = new FormData();
-            formData.append("file", audioBlob, `audio-${sessionIdRef.current}.${getFileExtension(mimeType)}`);
+            // Convert blob to base64 string
+            const reader = new FileReader();
+            reader.onload = async () => {
+              try {
+                const base64String = (reader.result as string).split(',')[1];
+                console.log("Audio converted to base64, length:", base64String.length);
 
-            // Upload to storage endpoint
-            const uploadResponse = await fetch("/api/trpc/audio.uploadAudio", {
-              method: "POST",
-              body: formData,
-            });
+                // Upload audio using tRPC mutation
+                const uploadMutation = trpc.audio.uploadAudio.useMutation();
+                const uploadResult = await uploadMutation.mutateAsync({
+                  sessionId: sessionIdRef.current,
+                  audioBase64: base64String,
+                  mimeType: mimeType,
+                });
 
-            if (uploadResponse.ok) {
-              const uploadData = await uploadResponse.json();
-              console.log("Upload response:", uploadData);
+                console.log("Upload result:", uploadResult);
 
-              // Extract audio URL from response
-              let audioUrl = "";
-              if (uploadData[0]?.result?.data?.url) {
-                audioUrl = uploadData[0].result.data.url;
-              }
+                if (uploadResult.success && uploadResult.url) {
+                  const audioUrl = uploadResult.url;
 
-              if (audioUrl) {
-                // Transcribe audio
-                try {
-                  const transcriptionResult = await transcribeAudioMutation.mutateAsync({
-                    audioUrl: audioUrl,
-                    sessionId: sessionIdRef.current,
-                    language: "en",
-                  });
+                  // Transcribe audio
+                  try {
+                    const transcriptionResult = await transcribeAudioMutation.mutateAsync({
+                      audioUrl: audioUrl,
+                      sessionId: sessionIdRef.current,
+                      language: "en",
+                    });
 
-                  console.log("Transcription result:", transcriptionResult);
-                  if (transcriptionResult.success) {
-                    setTranscription(transcriptionResult.text);
-                    toast.success("転写が完了しました");
+                    console.log("Transcription result:", transcriptionResult);
+                    if (transcriptionResult.success) {
+                      setTranscription(transcriptionResult.text);
+                      toast.success("転写が完了しました");
+                    }
+                  } catch (err) {
+                    console.error("Transcription error:", err);
+                    toast.error("転写に失敗しました");
                   }
-                } catch (err) {
-                  console.error("Transcription error:", err);
-                  toast.error("転写に失敗しました");
+                } else {
+                  console.error("Upload failed:", uploadResult);
+                  toast.error("音声のアップロードに失敗しました");
                 }
-              } else {
-                console.error("No audio URL in response");
+              } catch (err) {
+                console.error("Error uploading audio:", err);
                 toast.error("音声のアップロードに失敗しました");
               }
-            } else {
-              console.error("Upload failed:", uploadResponse.status);
-              toast.error("音声のアップロードに失敗しました");
-            }
+            };
+            reader.readAsDataURL(audioBlob);
           } catch (err) {
             console.error("Error processing audio:", err);
             toast.error("音声の処理に失敗しました");

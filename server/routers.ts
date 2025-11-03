@@ -154,29 +154,36 @@ export const appRouter = router({
     uploadAudio: publicProcedure
       .input(z.object({
         sessionId: z.string(),
+        audioBase64: z.string().optional(),
         audioData: z.array(z.number()).optional(),
         mimeType: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
-        try {
+          try {
           const session = await getAudioSession(input.sessionId);
           if (!session) {
             throw new Error("Session not found");
           }
 
-          if (!input.audioData || input.audioData.length === 0) {
+          let audioBuffer: Buffer;
+          const mimeType = input.mimeType || "audio/webm";
+
+          if (input.audioBase64) {
+            audioBuffer = Buffer.from(input.audioBase64, 'base64');
+          } else if (input.audioData && input.audioData.length > 0) {
+            audioBuffer = Buffer.from(input.audioData);
+          } else {
             throw new Error("No audio data provided");
           }
 
-          const audioBuffer = Buffer.from(input.audioData);
-          const mimeType = input.mimeType || "audio/webm";
+          console.log("[AUDIO] Uploading audio buffer, size:", audioBuffer.length);
 
           const result = await storagePut(
             `audio/${input.sessionId}/recording.${getFileExtensionFromMimeType(mimeType)}`,
             audioBuffer,
             mimeType
           );
-
+          console.log("[AUDIO] Upload successful, URL:", result.url);
           return {
             success: true,
             url: result.url,
