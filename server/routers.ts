@@ -121,14 +121,17 @@ export const appRouter = router({
             throw new Error("Session not found");
           }
 
+          console.log("[AUDIO] Calling transcribeAudio with URL:", input.audioUrl);
           const result = await transcribeAudio({
             audioUrl: input.audioUrl,
             language: input.language || "en",
             prompt: "Transcribe the user's voice to text",
           });
 
+          console.log("[AUDIO] Transcription result:", result);
           if ("error" in result) {
-            throw new Error(result.error);
+            console.error("[AUDIO] Transcription error:", result);
+            throw new Error(`${result.error} (${result.code}): ${result.details}`);
           }
 
           await createTranscription({
@@ -146,6 +149,7 @@ export const appRouter = router({
           };
         } catch (error) {
           console.error("[AUDIO] Failed to transcribe:", error);
+          console.error("[AUDIO] Error details:", error instanceof Error ? error.stack : error);
           throw new Error(`Transcription failed: ${error instanceof Error ? error.message : "Unknown error"}`);
         }
       }),
@@ -159,7 +163,7 @@ export const appRouter = router({
         mimeType: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
-          try {
+        try {
           const session = await getAudioSession(input.sessionId);
           if (!session) {
             throw new Error("Session not found");

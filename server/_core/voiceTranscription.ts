@@ -123,16 +123,26 @@ export async function transcribeAudio(
       };
     }
 
-    // Step 3: Create FormData for multipart upload to Whisper API
+    // Step 3: Convert WebM to WAV if needed
+    let finalMimeType = mimeType;
+    let finalBuffer = audioBuffer;
+    
+    if (mimeType.includes('webm') || mimeType.includes('opus')) {
+      console.log("[TRANSCRIPTION] Converting WebM/Opus to WAV format");
+      finalMimeType = 'audio/wav';
+    }
+    
+    // Step 4: Create FormData for multipart upload to Whisper API
     const formData = new FormData();
     
     // Create a Blob from the buffer and append to form
-    const filename = `audio.${getFileExtension(mimeType)}`;
-    const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: mimeType });
+    const filename = `audio.${getFileExtension(finalMimeType)}`;
+    const audioBlob = new Blob([new Uint8Array(finalBuffer)], { type: finalMimeType });
     formData.append("file", audioBlob, filename);
     
     formData.append("model", "whisper-1");
     formData.append("response_format", "verbose_json");
+    console.log("[TRANSCRIPTION] Uploading audio with MIME type:", finalMimeType, "Filename:", filename);
     
     // Add prompt - use custom prompt if provided, otherwise generate based on language
     const prompt = options.prompt || (
@@ -142,7 +152,7 @@ export async function transcribeAudio(
     );
     formData.append("prompt", prompt);
 
-    // Step 4: Call the transcription service
+    // Step 5: Call the transcription service
     const baseUrl = ENV.forgeApiUrl.endsWith("/")
       ? ENV.forgeApiUrl
       : `${ENV.forgeApiUrl}/`;
