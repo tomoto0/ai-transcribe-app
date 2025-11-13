@@ -6,6 +6,12 @@
 
 **Live Demo:** https://aitranscribe-uthyoeln.manus.space
 
+## Main Screen
+
+![AI Transcribe Main Screen](docs/screenshot-main.jpg)
+
+*The main interface featuring the audio recording section with start/stop controls, timer display, and usage instructions.*
+
 ## Key Features
 
 ### 1. **Audio Recording & Transcription**
